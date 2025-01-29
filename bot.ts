@@ -18,11 +18,13 @@ import { Liquidity, LiquidityPoolKeysV4, LiquidityStateV4, Percent, Token, Token
 import { MarketCache, PoolCache, SnipeListCache } from './cache';
 import { PoolFilters } from './filters';
 import { TransactionExecutor } from './transactions';
-import { createPoolKeys, logger, NETWORK, sleep } from './helpers';
+import { createPoolKeys, logger, MAX_MARKET_CAP, NETWORK, sleep } from './helpers';
 import { Mutex } from 'async-mutex';
 import BN from 'bn.js';
 import { WarpTransactionExecutor } from './transactions/warp-transaction-executor';
 import { JitoTransactionExecutor } from './transactions/jito-rpc-transaction-executor';
+import { MarketCapFilter } from './filters/market-cap.filter';
+import { PoolAgeFilter } from './filters/pool-age.filter';
 
 interface TrailingStopData {
   highestPrice: TokenAmount;
@@ -89,6 +91,7 @@ export class Bot {
       quoteToken: this.config.quoteToken,
       minPoolSize: this.config.minPoolSize,
       maxPoolSize: this.config.maxPoolSize,
+      maxMarketCap: MAX_MARKET_CAP,
     });
 
     if (this.config.useSnipeList) {
@@ -364,39 +367,75 @@ export class Bot {
 
   private async filterMatch(poolKeys: LiquidityPoolKeysV4) {
     if (this.config.filterCheckInterval === 0 || this.config.filterCheckDuration === 0) {
-      return true;
+        return true;
     }
 
+    // Run one-time checks first (market cap and pool age)
+    try {
+        // Try to cast poolFilters to access specific filters
+        const marketCapFilter = this.poolFilters.filters.find(f => f instanceof MarketCapFilter);
+        const poolAgeFilter = this.poolFilters.filters.find(f => f instanceof PoolAgeFilter);
+
+        if (marketCapFilter) {
+            const result = await marketCapFilter.execute(poolKeys);
+            if (!result.ok) {
+                logger.debug(
+                    { mint: poolKeys.baseMint.toString() },
+                    `Skipping further checks - ${result.message}`
+                );
+                return false;
+            }
+        }
+
+        if (poolAgeFilter) {
+            const result = await poolAgeFilter.execute(poolKeys);
+            if (!result.ok) {
+                logger.debug(
+                    { mint: poolKeys.baseMint.toString() },
+                    `Skipping further checks - ${result.message}`
+                );
+                return false;
+            }
+        }
+    } catch (e) {
+        logger.error(
+            { mint: poolKeys.baseMint.toString(), error: e },
+            'Failed to run one-time checks'
+        );
+        return false;
+    }
+
+    // Run remaining checks that might change over time
     const timesToCheck = this.config.filterCheckDuration / this.config.filterCheckInterval;
     let timesChecked = 0;
     let matchCount = 0;
 
     do {
-      try {
-        const shouldBuy = await this.poolFilters.execute(poolKeys);
+        try {
+            const shouldBuy = await this.poolFilters.executeRemainingChecks(poolKeys);
 
-        if (shouldBuy) {
-          matchCount++;
+            if (shouldBuy) {
+                matchCount++;
 
-          if (this.config.consecutiveMatchCount <= matchCount) {
-            logger.debug(
-              { mint: poolKeys.baseMint.toString() },
-              `Filter match ${matchCount}/${this.config.consecutiveMatchCount}`,
-            );
-            return true;
-          }
-        } else {
-          matchCount = 0;
+                if (this.config.consecutiveMatchCount <= matchCount) {
+                    logger.debug(
+                        { mint: poolKeys.baseMint.toString() },
+                        `Filter match ${matchCount}/${this.config.consecutiveMatchCount}`,
+                    );
+                    return true;
+                }
+            } else {
+                matchCount = 0;
+            }
+
+            await sleep(this.config.filterCheckInterval);
+        } finally {
+            timesChecked++;
         }
-
-        await sleep(this.config.filterCheckInterval);
-      } finally {
-        timesChecked++;
-      }
     } while (timesChecked < timesToCheck);
 
     return false;
-  }
+}
 
   private calculateStopLoss(currentPrice: TokenAmount): TokenAmount {
     // Calculate stop loss as percentage of current price
@@ -428,26 +467,31 @@ export class Bot {
 
     // Only update if we have a new highest price
     if (currentPrice.gt(trailingData.highestPrice)) {
-      const newStopLoss = this.calculateStopLoss(currentPrice);
-      
-      // Only update if the new stop loss is higher than current stop loss
-      if (newStopLoss.gt(trailingData.currentStopLoss)) {
-        trailingData.highestPrice = currentPrice;
-        trailingData.currentStopLoss = newStopLoss;
+        const newStopLoss = this.calculateStopLoss(currentPrice);
         
-        logger.debug(
-          { 
-            mint,
-            highestPrice: currentPrice.toFixed(),
-            newStopLoss: newStopLoss.toFixed(),
-            priceIncrease: currentPrice.subtract(trailingData.highestPrice).toFixed(),
-            stopLossIncrease: newStopLoss.subtract(trailingData.currentStopLoss).toFixed()
-          },
-          'Updated trailing stop'
-        );
-      }
+        // Only update if the new stop loss is higher than current stop loss
+        if (newStopLoss.gt(trailingData.currentStopLoss)) {
+            // Calculate increases before updating the values
+            const priceIncrease = currentPrice.subtract(trailingData.highestPrice);
+            const stopLossIncrease = newStopLoss.subtract(trailingData.currentStopLoss);
+            
+            // Update the values
+            trailingData.highestPrice = currentPrice;
+            trailingData.currentStopLoss = newStopLoss;
+            
+            logger.debug(
+                { 
+                    mint,
+                    highestPrice: currentPrice.toFixed(),
+                    newStopLoss: newStopLoss.toFixed(),
+                    priceIncrease: priceIncrease.toFixed(),
+                    stopLossIncrease: stopLossIncrease.toFixed()
+                },
+                'Updated trailing stop'
+            );
+        }
     }
-  }
+}
 
 
   private async priceMatch(amountIn: TokenAmount, poolKeys: LiquidityPoolKeysV4) {

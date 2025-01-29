@@ -46,6 +46,10 @@ import {
   FILTER_CHECK_INTERVAL,
   FILTER_CHECK_DURATION,
   CONSECUTIVE_FILTER_MATCHES,
+  MAX_MARKET_CAP,
+  CHECK_POOL_AGE,
+  MAX_POOL_AGE,
+  MIN_POOL_AGE,
 } from './helpers';
 import { version } from './package.json';
 import { WarpTransactionExecutor } from './transactions/warp-transaction-executor';
@@ -132,7 +136,16 @@ function printDetails(wallet: Keypair, quoteToken: Token, bot: Bot) {
     logger.info(`Check burned: ${botConfig.checkBurned}`);
     logger.info(`Min pool size: ${botConfig.minPoolSize.toFixed()}`);
     logger.info(`Max pool size: ${botConfig.maxPoolSize.toFixed()}`);
-  }
+    if (MAX_MARKET_CAP > 0) {
+      logger.info(`Max market cap: ${MAX_MARKET_CAP} SOL`);
+    }
+    if (CHECK_POOL_AGE) {
+      logger.info(`Min pool age: ${(MIN_POOL_AGE / 60).toFixed(2)} minutes`);
+      if (MAX_POOL_AGE > 0) {
+          logger.info(`Max pool age: ${(MAX_POOL_AGE / 3600).toFixed(2)} hours`);
+        }
+      } 
+    } 
 
   logger.info('------- CONFIGURATION END -------');
 

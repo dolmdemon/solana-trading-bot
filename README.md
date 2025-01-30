@@ -72,6 +72,8 @@ You should see the following output:
   - Take profit is calculated based on quote mint.
 - `STOP_LOSS` - Percentage loss at which to stop the loss.
   - Stop loss is calculated based on quote mint.
+- `TRAILING_STOP_LOSS` - Set `true` to enable trailing stop loss to minimize losses.
+  - Auto increases the STOP_LOSS price as the current price increases. Cannot decrease..
 - `SELL_SLIPPAGE` - Slippage %.
 
 #### Snipe list
@@ -110,7 +112,7 @@ Note: When using snipe list filters below will be disabled.
 - `MAX_POOL_AGE` - Bot will buy only if the the pools age is less than or equal to the specified seconds.
   - In seconds - e.g. 1800 = 30 minutes.
 
-  
+
 ## Warp transactions (beta)
 
 In case you experience a lot of failed transactions or transaction performance is too slow, you can try using `warp` for executing transactions.

@@ -102,7 +102,15 @@ Note: When using snipe list filters below will be disabled.
   - Set `0` to disable.
 - `MAX_POOL_SIZE` - Bot will buy only if the pool size is less than or equal the specified amount.
   - Set `0` to disable.
+- `MAX_MARKET_CAP` - Bot will buy only if the Market Cap (SOL) is less than or equal the specified amount.
+  - Set `0` to disable.
+- `CHECK_POOL_AGE` - Set to `true` to enable the Pool Age filter.
+- `MIN_POOL_AGE` - Bot will buy only if the the pools age is greater than the specified seconds.
+  - In seconds - e.g. 60 = 1 minute.
+- `MAX_POOL_AGE` - Bot will buy only if the the pools age is less than or equal to the specified seconds.
+  - In seconds - e.g. 1800 = 30 minutes.
 
+  
 ## Warp transactions (beta)
 
 In case you experience a lot of failed transactions or transaction performance is too slow, you can try using `warp` for executing transactions.
